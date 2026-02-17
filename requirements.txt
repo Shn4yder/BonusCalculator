@@ -1,0 +1,2 @@
+aspose-tasks>=24.0
+
