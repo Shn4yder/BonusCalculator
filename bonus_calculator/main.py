@@ -9,13 +9,13 @@ try:
     from bonus_calculator.mpp_parser import load_unique_resources, collect_timephased_data, get_project_name, is_project_completed
     from bonus_calculator.excel_utils import load_bonuses_from_excel
     from bonus_calculator.report_generator import generate_report
-    from bonus_calculator.utils import parse_indices
+    from bonus_calculator.utils import parse_indices, get_unique_report_path
 except ImportError:
     # Fallback for relative imports if run as a module
     from .mpp_parser import load_unique_resources, collect_timephased_data, get_project_name, is_project_completed
     from .excel_utils import load_bonuses_from_excel
     from .report_generator import generate_report
-    from .utils import parse_indices
+    from .utils import parse_indices, get_unique_report_path
 
 def resolve_file(p: str) -> str:
     p1 = os.path.abspath(p)
@@ -58,23 +58,8 @@ def main():
         sys.exit(1)
 
     # Определяем, является ли report_path путем к файлу или директорией
-    final_report_path = report_path
-    if report_path.lower().endswith(".xlsx"):
-        # Это файл
-        parent_dir = os.path.dirname(report_path)
-        if parent_dir and not os.path.exists(parent_dir):
-            try:
-                os.makedirs(parent_dir, exist_ok=True)
-            except Exception:
-                pass
-    else:
-        # Это директория
-        if not os.path.exists(report_path):
-            try:
-                os.makedirs(report_path, exist_ok=True)
-            except Exception:
-                pass
-        final_report_path = os.path.join(report_path, "output_data.xlsx")
+    # final_report_path logic moved to after project name retrieval
+    pass
 
     # 1. Load Bonuses
     staff_bonus = None
@@ -147,6 +132,10 @@ def main():
         
     # 4. Get Project Name
     project_name = get_project_name(project)
+    
+    # 4.5 Determine Final Report Path
+    final_report_path = get_unique_report_path(report_path, project_name)
+    print(f"Отчет будет сохранен как: {final_report_path}")
     
     # 5. Generate Report
     print("Генерация отчета...")

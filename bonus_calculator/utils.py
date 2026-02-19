@@ -1,4 +1,6 @@
 import re
+import os
+import datetime
 
 RUSSIAN_MONTHS = {
     1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель", 5: "Май", 6: "Июнь",
@@ -42,3 +44,53 @@ def parse_indices(input_str: str, max_index: int) -> list[int]:
         except Exception:
             continue
     return result
+
+def sanitize_filename(name: str) -> str:
+    name = str(name).strip()
+    name = re.sub(r'[<>:\"/\\\\|?*]', '', name)
+    name = re.sub(r'\\s+', ' ', name)
+    return name
+
+def get_unique_report_path(base_dir_or_file: str, project_name: str = None) -> str:
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    if project_name:
+        safe_proj_name = sanitize_filename(project_name)
+        if len(safe_proj_name) > 50:
+            safe_proj_name = safe_proj_name[:50]
+        base_filename = f"Отчет_{safe_proj_name}_{timestamp}.xlsx"
+    else:
+        base_filename = f"Отчет_{timestamp}.xlsx"
+    
+    target_dir = "."
+    target_filename = base_filename
+    
+    if os.path.isdir(base_dir_or_file):
+        target_dir = base_dir_or_file
+        target_filename = base_filename
+    elif base_dir_or_file.lower().endswith('.xlsx'):
+        dirname = os.path.dirname(base_dir_or_file)
+        basename = os.path.basename(base_dir_or_file)
+        if dirname:
+            target_dir = dirname
+        else:
+            target_dir = "."
+            
+        if os.path.exists(base_dir_or_file):
+            # File exists, append timestamp
+            name, ext = os.path.splitext(basename)
+            target_filename = f"{name}_{timestamp}{ext}"
+        else:
+            # File does not exist, use as is (but ensure dir exists)
+            target_filename = basename
+    else:
+        # Fallback
+        target_dir = base_dir_or_file
+        target_filename = base_filename
+        
+    if not os.path.exists(target_dir):
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+        except:
+            pass
+            
+    return os.path.join(target_dir, target_filename)

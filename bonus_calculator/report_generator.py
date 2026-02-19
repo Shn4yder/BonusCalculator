@@ -23,7 +23,7 @@ def generate_report(
             pass
 
     # Load template or create new
-    template_path = os.path.join(os.path.dirname(__file__), "..", "data", "templates", "output_data.xlsx")
+    template_path = os.path.join(os.path.dirname(__file__), "..", "data", "templates", "output_data_temp.xlsx")
     template_path = os.path.abspath(template_path)
     
     wb = None
