@@ -113,12 +113,27 @@ def main():
         sys.exit(0)
 
     # 3. Collect Data
-    print("Сбор данных о трудозатратах...")
+    print("Сбор данных о трудозатратах (для всех ресурсов)...")
     try:
-        project, selected_resources, sorted_months, res_data = collect_timephased_data(mpp_path, chosen)
+        # Collect data for ALL resources to ensure correct totals
+        project, all_resources_data, sorted_months, res_data = collect_timephased_data(mpp_path, resources)
     except Exception as e:
         print(f"Ошибка при сборе данных: {e}")
         sys.exit(1)
+        
+    # Determine visible indices
+    # We need to match chosen names to the returned all_resources_data
+    # all_resources_data is a list of (name, obj)
+    
+    visible_indices = []
+    chosen_set = set(chosen)
+    
+    for idx, (name, r_obj) in enumerate(all_resources_data):
+        if name in chosen_set:
+            visible_indices.append(idx)
+            
+    if not visible_indices:
+         print("Внимание: выбранные ресурсы не найдены в данных проекта.")
         
     # 4. Get Project Name
     project_name = get_project_name(project)
@@ -130,10 +145,11 @@ def main():
             final_report_path,
             project_name,
             sorted_months,
-            selected_resources,
-            res_data,
+            all_resources_data, # Pass ALL resources
+            res_data,           # Pass ALL data
             staff_bonus,
-            manager_bonus
+            manager_bonus,
+            visible_indices=visible_indices # Pass filter
         )
     except Exception as e:
         print(f"Ошибка при генерации отчета: {e}")

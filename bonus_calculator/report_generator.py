@@ -8,10 +8,11 @@ def generate_report(
     report_path: str,
     project_name: str,
     sorted_months: list[tuple[int, int]],
-    selected_resources: list[tuple[str, object]],
+    all_resources: list[tuple[str, object]],
     res_data: dict[int, dict[tuple[int, int], float]],
     staff_bonus: float | None,
-    manager_bonus: float | None
+    manager_bonus: float | None,
+    visible_indices: list[int] | None = None
 ):
     # Ensure directory exists
     parent_dir = os.path.dirname(report_path)
@@ -175,22 +176,150 @@ def generate_report(
     except Exception:
         pass
 
-    # Заполняем данные
+    # ====================================================================================
+    # CALCULATION PHASE (Calculate KTU and Bonus for ALL resources, regardless of selection)
+    # ====================================================================================
+    
+    total_hours_map = {} # idx -> hours
+    grand_total_hours = 0.0
+    
+    for idx in range(len(all_resources)):
+        hours = sum(res_data.get(idx, {}).values())
+        total_hours_map[idx] = hours
+        grand_total_hours += hours
+        
+    # Identify max work resource for plug logic
+    max_work_idx = -1
+    max_val = -1.0
+    
+    if grand_total_hours > 0 and len(all_resources) > 0:
+        max_work_idx = 0
+        max_val = total_hours_map[0]
+        for idx, val in total_hours_map.items():
+            if val > max_val:
+                max_val = val
+                max_work_idx = idx
+                
+    ktu_map = {}
+    bonus_map = {}
+    
+    current_ktu_sum = 0.0
+    current_bonus_sum = 0.0
+    
+    # Calculate initial values for everyone (skipping max work resource for now)
+    for idx in range(len(all_resources)):
+        if idx == max_work_idx:
+            continue
+            
+        h = total_hours_map[idx]
+        if grand_total_hours > 0:
+            ktu = round(h * 100 / grand_total_hours, 2)
+        else:
+            ktu = 0.0
+        ktu_map[idx] = ktu
+        current_ktu_sum += ktu
+        
+        if staff_bonus is not None:
+             bon = round(ktu / 100 * staff_bonus, 2)
+             bonus_map[idx] = bon
+             current_bonus_sum += bon
+        else:
+             bonus_map[idx] = 0.0
+             
+    # Apply plug logic to max work resource
+    if max_work_idx != -1:
+        ktu_map[max_work_idx] = round(100.0 - current_ktu_sum, 2)
+        if staff_bonus is not None:
+            bonus_map[max_work_idx] = round(staff_bonus - current_bonus_sum, 2)
+        else:
+            bonus_map[max_work_idx] = 0.0
+    
+    # ====================================================================================
+    # PREPARE DATA WRITING
+    # ====================================================================================
+
+    if visible_indices is None:
+        visible_indices = list(range(len(all_resources)))
+        
     start_data_row = header_row + 1
     
-    # Очистка строк данных
-    for r in range(start_data_row, start_data_row + 100):
-        if ws.cell(row=r, column=fio_col).value is None:
+    # 1. CLEANUP OLD DATA
+    # Strategy: Find the start of the Footer (Signatures).
+    # Everything between start_data_row and Footer is considered "Old Data" and must be deleted.
+    # This ensures we remove not just the previous run's data, but also any "stuck" blocks 
+    # like the one the user highlighted (rows 10-14 in their screenshot).
+    
+    signature_keywords = [
+        "руководитель проекта", 
+        "куратор", 
+        "заказчик", 
+        "инвестор",
+        "согласовано",
+        "утверждаю",
+        "главный конструктор"
+    ]
+    
+    footer_start_row = None
+    
+    # Search for signature in Column A and FIO Column (B)
+    # Scan a reasonable range (e.g. 1000 rows)
+    for r in range(start_data_row, start_data_row + 1000):
+        # Check FIO Col
+        val_fio = ws.cell(row=r, column=fio_col).value
+        str_fio = str(val_fio).strip().lower() if val_fio else ""
+        
+        # Check Col A (sometimes signatures are in A)
+        val_a = ws.cell(row=r, column=1).value
+        str_a = str(val_a).strip().lower() if val_a else ""
+        
+        found_sig = False
+        for kw in signature_keywords:
+            if kw in str_fio or kw in str_a:
+                found_sig = True
+                break
+        
+        if found_sig:
+            footer_start_row = r
             break
+            
+    if footer_start_row:
+        # Delete everything from start_data_row up to (but not including) the signature row
+        rows_to_delete = footer_start_row - start_data_row
+        if rows_to_delete > 0:
+            ws.delete_rows(start_data_row, amount=rows_to_delete)
+    else:
+        # Fallback: If no signatures found, try to find the LAST "Total" or "Manager Bonus"
+        # and delete everything up to it?
+        # Or just delete to max_row if it's reasonable?
         
-    for idx, (name, r_obj) in enumerate(selected_resources):
-        row = start_data_row + idx
-        ws.cell(row=row, column=1, value=idx + 1)
-        ws.cell(row=row, column=fio_col, value=name)
-        
+        # If we can't find signatures, it's safer to clear everything below header
+        # assuming the file only contains this report.
+        max_r = ws.max_row
+        if max_r >= start_data_row:
+            ws.delete_rows(start_data_row, amount=max_r - start_data_row + 1)
+
+    # 2. INSERT NEW ROWS
+    # +1 for "Total" row
+    rows_needed = len(visible_indices) + 1 
+    ws.insert_rows(start_data_row, amount=rows_needed)
+
+    # 3. WRITE DATA ROWS
+    current_row_offset = 0
+    
+    for idx in visible_indices:
+        if idx >= len(all_resources):
+            continue
+            
+        name = all_resources[idx][0]
         monthly_data = res_data.get(idx, {})
         
-        # Заполняем часы
+        row = start_data_row + current_row_offset
+        current_row_offset += 1
+        
+        ws.cell(row=row, column=1, value=current_row_offset)
+        ws.cell(row=row, column=fio_col, value=name)
+        
+        # Hours
         for i, (y, m) in enumerate(sorted_months):
             col_idx = month_start_col + i
             hours = monthly_data.get((y, m), 0.0)
@@ -199,21 +328,34 @@ def generate_report(
             c_h.alignment = Alignment(horizontal='center', vertical='center')
             c_h.font = Font(bold=False, italic=False)
             
-        # Формула Итого
+        # Row Total (Formula is safe as it sums visible cells in the row)
         start_col_letter = openpyxl.utils.get_column_letter(month_start_col)
         end_col_letter = openpyxl.utils.get_column_letter(total_work_col - 1)
         c_sum = ws.cell(row=row, column=total_work_col, value=f"=ROUND(SUM({start_col_letter}{row}:{end_col_letter}{row}), 2)")
         c_sum.number_format = '0.00'
         c_sum.alignment = Alignment(horizontal='center', vertical='center')
         c_sum.font = Font(bold=False, italic=False)
+        
+        # KTU (Calculated Value)
+        c_ktu = ws.cell(row=row, column=ktu_col, value=ktu_map.get(idx, 0.0))
+        c_ktu.number_format = '0.00'
+        c_ktu.alignment = Alignment(horizontal='center', vertical='center')
+        c_ktu.font = Font(bold=False, italic=False)
+        
+        # Bonus (Calculated Value)
+        c_bon = ws.cell(row=row, column=bonus_col, value=bonus_map.get(idx, 0.0))
+        c_bon.number_format = '0.00'
+        c_bon.alignment = Alignment(horizontal='center', vertical='center')
+        c_bon.font = Font(bold=True)
 
-    # Строка ИТОГО
-    total_row_idx = start_data_row + len(selected_resources)
+    # 4. WRITE TOTAL ROW
+    total_row_idx = start_data_row + len(visible_indices)
+    
     c_total_label = ws.cell(row=total_row_idx, column=fio_col, value="Общий итог")
     c_total_label.font = Font(bold=False, italic=False)
     c_total_label.alignment = Alignment(horizontal='center', vertical='center')
     
-    # Суммы по месяцам
+    # Sums (using formulas to sum visible rows)
     for i in range(len(sorted_months)):
         col_idx = month_start_col + i
         col_let = openpyxl.utils.get_column_letter(col_idx)
@@ -222,101 +364,45 @@ def generate_report(
         c_tot_m.alignment = Alignment(horizontal='center', vertical='center')
         c_tot_m.font = Font(bold=False, italic=False)
         
-    # Сумма общих итогов
+    # Total Work Sum
     total_work_col_letter = openpyxl.utils.get_column_letter(total_work_col)
     c_tot_w = ws.cell(row=total_row_idx, column=total_work_col, value=f"=ROUND(SUM({total_work_col_letter}{start_data_row}:{total_work_col_letter}{total_row_idx-1}), 2)")
     c_tot_w.number_format = '0.00'
     c_tot_w.alignment = Alignment(horizontal='center', vertical='center')
     c_tot_w.font = Font(bold=False, italic=False)
     
-    # Сумма КТУ
+    # KTU Sum
     ktu_col_letter = openpyxl.utils.get_column_letter(ktu_col)
     c_ktu_tot = ws.cell(row=total_row_idx, column=ktu_col, value=f"=ROUND(SUM({ktu_col_letter}{start_data_row}:{ktu_col_letter}{total_row_idx-1}), 2)")
     c_ktu_tot.number_format = '0.00'
     c_ktu_tot.alignment = Alignment(horizontal='center', vertical='center')
     c_ktu_tot.font = Font(bold=False, italic=False)
     
-    # Сумма Премий
+    # Bonus Sum
     bonus_col_letter = openpyxl.utils.get_column_letter(bonus_col)
     c_bon_tot = ws.cell(row=total_row_idx, column=bonus_col, value=f"=ROUND(SUM({bonus_col_letter}{start_data_row}:{bonus_col_letter}{total_row_idx-1}), 2)")
     c_bon_tot.number_format = '0.00'
     c_bon_tot.alignment = Alignment(horizontal='center', vertical='center')
     c_bon_tot.font = Font(bold=True)
 
-    # КТУ и Премии
+    # 5. WRITE MANAGER BONUS ROW
+    # Add empty row between Total and Manager Bonus if needed?
+    # Usually we want:
+    # ...
+    # Total
+    # (empty?)
+    # Manager Bonus
     
-    # 1. Сначала вычислим общее количество часов, чтобы найти того, у кого их больше всего
-    total_hours_per_resource = {}
-    for idx in range(len(selected_resources)):
-        monthly_data = res_data.get(idx, {})
-        total_hours_per_resource[idx] = sum(monthly_data.values())
-        
-    max_work_idx = -1
-    max_val = -1.0
+    # If we want an empty row, we should have added +2 to insert_rows.
+    # Let's insert rows for spacing AND for the Manager Bonus itself to avoid overwriting footer.
+    # We want:
+    # Total
+    # (Empty)
+    # Manager Bonus
+    # (Existing Footer starts here)
     
-    if len(selected_resources) > 0:
-        max_work_idx = 0
-        max_val = total_hours_per_resource[0]
-        for idx, val in total_hours_per_resource.items():
-            if val > max_val:
-                max_val = val
-                max_work_idx = idx
-
-    for idx in range(len(selected_resources)):
-        row = start_data_row + idx
-        
-        # КТУ
-        if idx == max_work_idx and len(selected_resources) > 1:
-            # Plug formula: 100 - SUM(others)
-            parts = []
-            if idx > 0:
-                prev_start = start_data_row
-                prev_end = row - 1
-                parts.append(f"{ktu_col_letter}{prev_start}:{ktu_col_letter}{prev_end}")
-            
-            if idx < len(selected_resources) - 1:
-                next_start = row + 1
-                next_end = start_data_row + len(selected_resources) - 1
-                parts.append(f"{ktu_col_letter}{next_start}:{ktu_col_letter}{next_end}")
-                
-            sum_formula = "+".join([f"SUM({p})" for p in parts])
-            c_ktu = ws.cell(row=row, column=ktu_col, value=f"=100-({sum_formula})")
-        else:
-            # Standard formula: =ROUND(TotalWork * 100 / GrandTotalWork, 2)
-            c_ktu = ws.cell(row=row, column=ktu_col, value=f"=ROUND({total_work_col_letter}{row}*100/${total_work_col_letter}${total_row_idx}, 2)")
-            
-        c_ktu.number_format = '0.00'
-        c_ktu.alignment = Alignment(horizontal='center', vertical='center')
-        c_ktu.font = Font(bold=False, italic=False)
-        
-        # Премия
-        if staff_bonus is not None:
-            if idx == max_work_idx and len(selected_resources) > 1:
-                # Plug formula: StaffBonus - SUM(others)
-                parts = []
-                if idx > 0:
-                    prev_start = start_data_row
-                    prev_end = row - 1
-                    parts.append(f"{bonus_col_letter}{prev_start}:{bonus_col_letter}{prev_end}")
-                
-                if idx < len(selected_resources) - 1:
-                    next_start = row + 1
-                    next_end = start_data_row + len(selected_resources) - 1
-                    parts.append(f"{bonus_col_letter}{next_start}:{bonus_col_letter}{next_end}")
-                    
-                sum_formula = "+".join([f"SUM({p})" for p in parts])
-                c_bon = ws.cell(row=row, column=bonus_col, value=f"={staff_bonus}-({sum_formula})")
-            else:
-                # Standard formula: =ROUND(KTU / 100 * StaffBonus, 2)
-                c_bon = ws.cell(row=row, column=bonus_col, value=f"=ROUND({ktu_col_letter}{row}/100*{staff_bonus}, 2)")
-        else:
-             c_bon = ws.cell(row=row, column=bonus_col, value=0)
-             
-        c_bon.number_format = '0.00'
-        c_bon.alignment = Alignment(horizontal='center', vertical='center')
-        c_bon.font = Font(bold=True)
-
-    # Строка "Премия руководителя"
+    ws.insert_rows(total_row_idx + 1, amount=2)
+    
     manager_row = total_row_idx + 2
     ws.cell(row=manager_row, column=fio_col, value="Премия РП")
     c_m = ws.cell(row=manager_row, column=bonus_col, value=manager_bonus if manager_bonus is not None else 0)
@@ -339,15 +425,10 @@ def generate_report(
             ws.cell(row=r, column=c).border = thin_border
             
     # Manager row - NO BORDERS
-    # Explicitly removing borders for manager row (just in case they were inherited)
     ws.cell(row=manager_row, column=fio_col).border = None
     ws.cell(row=manager_row, column=bonus_col).border = None
 
     # -- COLUMN A FORMATTING --
-    # "все данные в столбце а кроме ячейки а1 должны быть расположены по левому краю и иметь шрифт calibri 
-    # (кроме ячеек с надписью премия рп, заказчик/куратор, руководитель, ивестор)"
-    
-    # Определяем ключевые слова для исключения
     exclude_keywords = [
         "премия рп", 
         "заказчик", 
@@ -359,25 +440,16 @@ def generate_report(
     calibri_font = Font(name='Calibri', size=11, bold=False)
     left_align = Alignment(horizontal='left', vertical='center')
     
-    # Проходим по всем заполненным строкам столбца A, начиная с A2
     max_row = ws.max_row
     for r in range(2, max_row + 1):
         cell_a = ws.cell(row=r, column=1)
         val_a = str(cell_a.value).strip().lower() if cell_a.value else ""
         
-        # Проверяем, не содержит ли ячейка запрещенные слова
         should_skip = False
         for kw in exclude_keywords:
             if kw in val_a:
                 should_skip = True
                 break
-        
-        # Также проверяем соседнюю ячейку (столбец B), так как "Премия РП" пишется в fio_col (B)
-        # Если в строке есть "Премия РП" в столбце B, возможно, пользователь хочет пропустить форматирование A в этой строке?
-        # По запросу: "кроме ячеек с надписью..." - скорее всего, речь о самой ячейке.
-        # Но "Премия РП" в коде пишется в fio_col.
-        # Если "Премия РП" в B, а A пустое -> форматирование пустого A не повредит.
-        # Если "Руководитель проекта" (подпись) в A -> тогда skip.
         
         if not should_skip:
              cell_a.font = calibri_font
