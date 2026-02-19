@@ -1,2 +1,2 @@
 aspose-tasks>=24.0
-
+openpyxl>=3.1
