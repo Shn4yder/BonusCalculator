@@ -88,6 +88,18 @@ def get_project_name(project):
          
     return project_name
 
+def is_project_completed(mpp_path: str) -> bool:
+    project = tsk.Project(mpp_path)
+    
+    # We rely on MS Project's own calculation of the project completion.
+    # The Root Task (Project Summary Task) percentage reflects the overall status,
+    # automatically handling task durations, rollups, and ignoring inactive tasks.
+    if project.root_task:
+        # Check if project is 100% complete
+        return project.root_task.percent_complete == 100
+        
+    return False
+
 def collect_timephased_data(mpp_path, chosen_resources):
     # Инициализируем проект заново для работы с объектами
     project = tsk.Project(mpp_path)

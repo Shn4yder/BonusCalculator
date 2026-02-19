@@ -6,13 +6,13 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from bonus_calculator.mpp_parser import load_unique_resources, collect_timephased_data, get_project_name
+    from bonus_calculator.mpp_parser import load_unique_resources, collect_timephased_data, get_project_name, is_project_completed
     from bonus_calculator.excel_utils import load_bonuses_from_excel
     from bonus_calculator.report_generator import generate_report
     from bonus_calculator.utils import parse_indices
 except ImportError:
     # Fallback for relative imports if run as a module
-    from .mpp_parser import load_unique_resources, collect_timephased_data, get_project_name
+    from .mpp_parser import load_unique_resources, collect_timephased_data, get_project_name, is_project_completed
     from .excel_utils import load_bonuses_from_excel
     from .report_generator import generate_report
     from .utils import parse_indices
@@ -46,6 +46,16 @@ def main():
     if not os.path.isfile(xlsx_path) or not xlsx_path.lower().endswith(".xlsx"):
         print("Ошибка: второй аргумент должен быть существующим файлом с расширением .xlsx")
         sys.exit(2)
+
+    # Check project completion status
+    print("Проверка статуса проекта...")
+    try:
+        if not is_project_completed(mpp_path):
+            print("Внимание: Проект не завершен на 100%. Отчет не будет сформирован.")
+            sys.exit(0)
+    except Exception as e:
+        print(f"Ошибка при проверке статуса проекта: {e}")
+        sys.exit(1)
 
     # Определяем, является ли report_path путем к файлу или директорией
     final_report_path = report_path
