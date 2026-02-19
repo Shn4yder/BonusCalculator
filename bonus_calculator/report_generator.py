@@ -244,22 +244,74 @@ def generate_report(
     c_bon_tot.font = Font(bold=True)
 
     # КТУ и Премии
+    
+    # 1. Сначала вычислим общее количество часов, чтобы найти того, у кого их больше всего
+    total_hours_per_resource = {}
+    for idx in range(len(selected_resources)):
+        monthly_data = res_data.get(idx, {})
+        total_hours_per_resource[idx] = sum(monthly_data.values())
+        
+    max_work_idx = -1
+    max_val = -1.0
+    
+    if len(selected_resources) > 0:
+        max_work_idx = 0
+        max_val = total_hours_per_resource[0]
+        for idx, val in total_hours_per_resource.items():
+            if val > max_val:
+                max_val = val
+                max_work_idx = idx
+
     for idx in range(len(selected_resources)):
         row = start_data_row + idx
         
         # КТУ
-        # =ROUND(TotalWork * 100 / GrandTotalWork, 2)
-        c_ktu = ws.cell(row=row, column=ktu_col, value=f"=ROUND({total_work_col_letter}{row}*100/${total_work_col_letter}${total_row_idx}, 2)")
+        if idx == max_work_idx and len(selected_resources) > 1:
+            # Plug formula: 100 - SUM(others)
+            parts = []
+            if idx > 0:
+                prev_start = start_data_row
+                prev_end = row - 1
+                parts.append(f"{ktu_col_letter}{prev_start}:{ktu_col_letter}{prev_end}")
+            
+            if idx < len(selected_resources) - 1:
+                next_start = row + 1
+                next_end = start_data_row + len(selected_resources) - 1
+                parts.append(f"{ktu_col_letter}{next_start}:{ktu_col_letter}{next_end}")
+                
+            sum_formula = "+".join([f"SUM({p})" for p in parts])
+            c_ktu = ws.cell(row=row, column=ktu_col, value=f"=100-({sum_formula})")
+        else:
+            # Standard formula: =ROUND(TotalWork * 100 / GrandTotalWork, 2)
+            c_ktu = ws.cell(row=row, column=ktu_col, value=f"=ROUND({total_work_col_letter}{row}*100/${total_work_col_letter}${total_row_idx}, 2)")
+            
         c_ktu.number_format = '0.00'
         c_ktu.alignment = Alignment(horizontal='center', vertical='center')
         c_ktu.font = Font(bold=False, italic=False)
         
         # Премия
-        # =ROUND(KTU / 100 * StaffBonus, 2)
         if staff_bonus is not None:
-             c_bon = ws.cell(row=row, column=bonus_col, value=f"=ROUND({ktu_col_letter}{row}/100*{staff_bonus}, 2)")
+            if idx == max_work_idx and len(selected_resources) > 1:
+                # Plug formula: StaffBonus - SUM(others)
+                parts = []
+                if idx > 0:
+                    prev_start = start_data_row
+                    prev_end = row - 1
+                    parts.append(f"{bonus_col_letter}{prev_start}:{bonus_col_letter}{prev_end}")
+                
+                if idx < len(selected_resources) - 1:
+                    next_start = row + 1
+                    next_end = start_data_row + len(selected_resources) - 1
+                    parts.append(f"{bonus_col_letter}{next_start}:{bonus_col_letter}{next_end}")
+                    
+                sum_formula = "+".join([f"SUM({p})" for p in parts])
+                c_bon = ws.cell(row=row, column=bonus_col, value=f"={staff_bonus}-({sum_formula})")
+            else:
+                # Standard formula: =ROUND(KTU / 100 * StaffBonus, 2)
+                c_bon = ws.cell(row=row, column=bonus_col, value=f"=ROUND({ktu_col_letter}{row}/100*{staff_bonus}, 2)")
         else:
              c_bon = ws.cell(row=row, column=bonus_col, value=0)
+             
         c_bon.number_format = '0.00'
         c_bon.alignment = Alignment(horizontal='center', vertical='center')
         c_bon.font = Font(bold=True)
