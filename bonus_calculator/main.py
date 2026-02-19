@@ -9,11 +9,13 @@ try:
     from bonus_calculator.mpp_parser import load_unique_resources, collect_timephased_data, get_project_name
     from bonus_calculator.excel_utils import load_bonuses_from_excel
     from bonus_calculator.report_generator import generate_report
+    from bonus_calculator.utils import parse_indices
 except ImportError:
     # Fallback for relative imports if run as a module
     from .mpp_parser import load_unique_resources, collect_timephased_data, get_project_name
     from .excel_utils import load_bonuses_from_excel
     from .report_generator import generate_report
+    from .utils import parse_indices
 
 def resolve_file(p: str) -> str:
     p1 = os.path.abspath(p)
@@ -94,8 +96,17 @@ def main():
     for i, r in enumerate(resources, start=1):
         print(f"{i}. {r}")
 
-    # Используем все ресурсы по умолчанию
-    chosen = resources
+    # Запрашиваем выбор ресурсов у пользователя
+    print("\nВведите номера ресурсов, которые необходимо включить в отчет (через запятую или пробел).")
+    print("Если ничего не ввести и нажать Enter, будут выбраны все ресурсы.")
+    selection = input("Ваш выбор: ")
+    
+    chosen = []
+    if not selection.strip():
+        chosen = resources
+    else:
+        indices = parse_indices(selection, len(resources))
+        chosen = [resources[i - 1] for i in indices]
     
     if not chosen:
         print("Не выбрано ни одного ресурса.")

@@ -28,3 +28,17 @@ def to_number(value):
         return float(m.group(0))
     except Exception:
         return None
+
+def parse_indices(input_str: str, max_index: int) -> list[int]:
+    tokens = re.findall(r"\d+", input_str)
+    seen = set()
+    result = []
+    for t in tokens:
+        try:
+            n = int(t)
+            if 1 <= n <= max_index and n not in seen:
+                seen.add(n)
+                result.append(n)
+        except Exception:
+            continue
+    return result

@@ -343,6 +343,46 @@ def generate_report(
     ws.cell(row=manager_row, column=fio_col).border = None
     ws.cell(row=manager_row, column=bonus_col).border = None
 
+    # -- COLUMN A FORMATTING --
+    # "все данные в столбце а кроме ячейки а1 должны быть расположены по левому краю и иметь шрифт calibri 
+    # (кроме ячеек с надписью премия рп, заказчик/куратор, руководитель, ивестор)"
+    
+    # Определяем ключевые слова для исключения
+    exclude_keywords = [
+        "премия рп", 
+        "заказчик", 
+        "куратор", 
+        "руководитель", 
+        "инвестор"
+    ]
+    
+    calibri_font = Font(name='Calibri', size=11, bold=False)
+    left_align = Alignment(horizontal='left', vertical='center')
+    
+    # Проходим по всем заполненным строкам столбца A, начиная с A2
+    max_row = ws.max_row
+    for r in range(2, max_row + 1):
+        cell_a = ws.cell(row=r, column=1)
+        val_a = str(cell_a.value).strip().lower() if cell_a.value else ""
+        
+        # Проверяем, не содержит ли ячейка запрещенные слова
+        should_skip = False
+        for kw in exclude_keywords:
+            if kw in val_a:
+                should_skip = True
+                break
+        
+        # Также проверяем соседнюю ячейку (столбец B), так как "Премия РП" пишется в fio_col (B)
+        # Если в строке есть "Премия РП" в столбце B, возможно, пользователь хочет пропустить форматирование A в этой строке?
+        # По запросу: "кроме ячеек с надписью..." - скорее всего, речь о самой ячейке.
+        # Но "Премия РП" в коде пишется в fio_col.
+        # Если "Премия РП" в B, а A пустое -> форматирование пустого A не повредит.
+        # Если "Руководитель проекта" (подпись) в A -> тогда skip.
+        
+        if not should_skip:
+             cell_a.font = calibri_font
+             cell_a.alignment = left_align
+
     # Сохраняем
     try:
         wb.save(report_path)
