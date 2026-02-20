@@ -429,9 +429,17 @@ def generate_report(
         for c in range(1, bonus_col + 1):
             ws.cell(row=r, column=c).border = thin_border
             
-    # Manager row - NO BORDERS
-    ws.cell(row=manager_row, column=fio_col).border = None
-    ws.cell(row=manager_row, column=bonus_col).border = None
+    # Manager row - WITH BORDERS
+    # Assuming we want to border the cells that have content (Label and Value)
+    # The label is at fio_col, the value is at bonus_col
+    # If you want a continuous row border, we should iterate from fio_col to bonus_col?
+    # Or just border the two cells as they are separate?
+    # Usually "Manager Bonus" looks like a separate small table or just two cells.
+    # Let's border from fio_col to bonus_col to make it look like a row in the table, 
+    # even if intermediate cells are empty.
+    
+    for c in range(1, bonus_col + 1):
+        ws.cell(row=manager_row, column=c).border = thin_border
 
     # -- COLUMN A FORMATTING --
     exclude_keywords = [
