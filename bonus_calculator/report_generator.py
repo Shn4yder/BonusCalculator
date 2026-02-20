@@ -177,25 +177,33 @@ def generate_report(
         pass
 
     # ====================================================================================
-    # CALCULATION PHASE (Calculate KTU and Bonus for ALL resources, regardless of selection)
+    # CALCULATION PHASE (Calculate KTU and Bonus ONLY for VISIBLE resources)
     # ====================================================================================
+    
+    if visible_indices is None:
+        visible_indices = list(range(len(all_resources)))
     
     total_hours_map = {} # idx -> hours
     grand_total_hours = 0.0
     
-    for idx in range(len(all_resources)):
+    # Calculate total hours only for visible resources
+    for idx in visible_indices:
         hours = sum(res_data.get(idx, {}).values())
         total_hours_map[idx] = hours
         grand_total_hours += hours
         
-    # Identify max work resource for plug logic
+    # Identify max work resource among visible ones for plug logic
     max_work_idx = -1
     max_val = -1.0
     
-    if grand_total_hours > 0 and len(all_resources) > 0:
-        max_work_idx = 0
-        max_val = total_hours_map[0]
-        for idx, val in total_hours_map.items():
+    if grand_total_hours > 0 and len(visible_indices) > 0:
+        # Initialize with first visible
+        first_idx = visible_indices[0]
+        max_work_idx = first_idx
+        max_val = total_hours_map.get(first_idx, 0.0)
+        
+        for idx in visible_indices:
+            val = total_hours_map.get(idx, 0.0)
             if val > max_val:
                 max_val = val
                 max_work_idx = idx
@@ -206,12 +214,12 @@ def generate_report(
     current_ktu_sum = 0.0
     current_bonus_sum = 0.0
     
-    # Calculate initial values for everyone (skipping max work resource for now)
-    for idx in range(len(all_resources)):
+    # Calculate initial values for visible resources (skipping max work resource for now)
+    for idx in visible_indices:
         if idx == max_work_idx:
             continue
             
-        h = total_hours_map[idx]
+        h = total_hours_map.get(idx, 0.0)
         if grand_total_hours > 0:
             ktu = round(h * 100 / grand_total_hours, 2)
         else:
@@ -238,9 +246,6 @@ def generate_report(
     # PREPARE DATA WRITING
     # ====================================================================================
 
-    if visible_indices is None:
-        visible_indices = list(range(len(all_resources)))
-        
     start_data_row = header_row + 1
     
     # 1. CLEANUP OLD DATA

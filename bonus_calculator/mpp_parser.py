@@ -41,15 +41,26 @@ def parse_duration_to_hours(val_str):
     # Простейший парсер для строк вида PT8H0M0S
     if not val_str:
         return 0.0
+    
+    val_str = str(val_str).strip()
+    
     try:
         import re
-        m = re.search(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(\.\d+)?)S)?', str(val_str))
+        # Format: PT...
+        m = re.search(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(\.\d+)?)S)?', val_str)
         if m:
             h = int(m.group(1) or 0)
             mm = int(m.group(2) or 0)
             s = float(m.group(3) or 0)
             return h + mm / 60.0 + s / 3600.0
-        return float(val_str)
+        
+        # Format: "1209,9 hrs" or similar
+        if "hrs" in val_str.lower():
+            clean_str = val_str.lower().replace("hrs", "").replace(",", ".").strip()
+            return float(clean_str)
+
+        # Fallback: try float directly (handle comma)
+        return float(val_str.replace(",", "."))
     except Exception:
         return 0.0
 
@@ -170,7 +181,7 @@ def collect_timephased_data(mpp_path, chosen_resources):
             if r_uid is not None and r_uid in uid_to_index:
                 idx = uid_to_index[r_uid]
                 
-                td_collection = ra.get_timephased_data(project.start_date, project.finish_date, tsk.TimephasedDataType.ASSIGNMENT_WORK)
+                td_collection = ra.get_timephased_data(project.start_date, project.finish_date, tsk.TimephasedDataType.ASSIGNMENT_ACTUAL_WORK)
                 
                 for td in td_collection:
                     val = td.value
