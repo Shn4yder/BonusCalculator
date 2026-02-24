@@ -72,7 +72,8 @@ def generate_report(
     
     # Очистка области заголовков от объединений и старых данных
     total_cols_needed = len(sorted_months) + 3
-    max_col_needed = month_start_col + total_cols_needed
+    # Use max_column to ensure we clear any old headers that might be far to the right
+    max_col_needed = max(month_start_col + total_cols_needed, ws.max_column + 1)
     
     ranges_to_unmerge = []
     for rng in ws.merged_cells.ranges:
@@ -85,11 +86,13 @@ def generate_report(
         except Exception:
             pass
 
-    # Очищаем две строки заголовков (Год и Месяц)
-    start_header_clear = header_row - 1 if header_row > 1 else header_row
+    # Очищаем область заголовков (включая верхние строки, где могут быть объединенные КТУ/Премия)
+    # Начинаем с 1-й строки, так как КТУ/Премия пишутся в row=1
+    start_header_clear = 1
     for r in range(start_header_clear, header_row + 1):
         for c in range(month_start_col, max_col_needed + 5):
             ws.cell(row=r, column=c).value = None
+            ws.cell(row=r, column=c).border = Border() # Also clear borders
     
     # Заполняем месяцы и годы
     current_year_start_col = None
@@ -425,6 +428,12 @@ def generate_report(
     start_border_row = header_row - 1 if header_row > 1 else header_row
     end_border_row = total_row_idx
     
+    # Ensure borders for merged headers (KTU/Bonus) which start at row 1
+    if start_border_row > 1:
+        for r in range(1, start_border_row):
+            ws.cell(row=r, column=ktu_col).border = thin_border
+            ws.cell(row=r, column=bonus_col).border = thin_border
+
     for r in range(start_border_row, end_border_row + 1):
         for c in range(1, bonus_col + 1):
             ws.cell(row=r, column=c).border = thin_border
@@ -467,6 +476,34 @@ def generate_report(
         if not should_skip:
              cell_a.font = calibri_font
              cell_a.alignment = left_align
+
+    # -- COLUMN WIDTHS --
+    # Set fixed widths for columns to prevent excessive stretching
+    
+    if fio_col > 1:
+        # If FIO is not in the first column, assume first column is for numbering
+        ws.column_dimensions['A'].width = 5
+        fio_col_letter = openpyxl.utils.get_column_letter(fio_col)
+        ws.column_dimensions[fio_col_letter].width = 40
+    else:
+        # If FIO is in the first column (A), set it to wide
+        ws.column_dimensions['A'].width = 40
+    
+    # Month Columns: Standard fixed width
+    for i in range(len(sorted_months)):
+        col_idx = month_start_col + i
+        col_let = openpyxl.utils.get_column_letter(col_idx)
+        ws.column_dimensions[col_let].width = 12
+        
+    # Total, KTU, Bonus Columns: Standard fixed width
+    total_col_let = openpyxl.utils.get_column_letter(total_work_col)
+    ws.column_dimensions[total_col_let].width = 15
+    
+    ktu_col_let = openpyxl.utils.get_column_letter(ktu_col)
+    ws.column_dimensions[ktu_col_let].width = 10
+    
+    bonus_col_let = openpyxl.utils.get_column_letter(bonus_col)
+    ws.column_dimensions[bonus_col_let].width = 15
 
     # Сохраняем
     try:

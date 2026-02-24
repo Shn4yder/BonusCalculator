@@ -67,20 +67,27 @@ def parse_duration_to_hours(val_str):
 def get_project_name(project):
     project_name = ""
     try:
-        # Пробуем получить имя первой задачи (ID 1)
+        name_0 = ""
+        name_1 = ""
+
+        # Get Root Task (ID 0) Name
+        if project.root_task and project.root_task.name:
+            name_0 = project.root_task.name
+            
+        # Get Task ID 1 Name
         if project.root_task:
-            # Ищем задачу с ID 1 среди дочерних
-            task_1 = None
             for child in project.root_task.children:
                 if child.id == 1:
-                    task_1 = child
+                    if child.name:
+                        name_1 = child.name
                     break
-            
-            if task_1 and task_1.name:
-                project_name = task_1.name
-            elif project.root_task.name:
-                # Если задачи с ID 1 нет или имя пустое, берем имя корневой задачи
-                project_name = project.root_task.name
+        
+        # Select the longest name
+        if len(name_1) > len(name_0):
+            project_name = name_1
+        else:
+            project_name = name_0
+
     except Exception:
         pass
         
@@ -181,7 +188,13 @@ def collect_timephased_data(mpp_path, chosen_resources):
             if r_uid is not None and r_uid in uid_to_index:
                 idx = uid_to_index[r_uid]
                 
-                td_collection = ra.get_timephased_data(project.start_date, project.finish_date, tsk.TimephasedDataType.ASSIGNMENT_ACTUAL_WORK)
+                # Use a wide date range to ensure we capture all actual work, 
+                # even if it falls outside the project's configured start/finish dates.
+                # Some tasks might be scheduled manually or have actuals outside the project summary range.
+                start_check = datetime.datetime(2000, 1, 1)
+                finish_check = datetime.datetime(2050, 1, 1)
+                
+                td_collection = ra.get_timephased_data(start_check, finish_check, tsk.TimephasedDataType.ASSIGNMENT_ACTUAL_WORK)
                 
                 for td in td_collection:
                     val = td.value
@@ -192,5 +205,49 @@ def collect_timephased_data(mpp_path, chosen_resources):
                         res_data[idx][key] += hours
         except Exception as e:
             pass
+
+    # Recalculate sorted_months based on actual data found to ensure everything is covered
+    all_yms = set()
+    
+    # Add project range months if available (to ensure minimum coverage)
+    if project_start and project_finish:
+        # Use timezone-naive for comparison logic below
+        ps = project_start.replace(tzinfo=None)
+        pf = project_finish.replace(tzinfo=None)
+        
+        curr = datetime.datetime(ps.year, ps.month, 1)
+        end_dt = datetime.datetime(pf.year, pf.month, 1)
+        while curr <= end_dt:
+            all_yms.add((curr.year, curr.month))
+            if curr.month == 12:
+                curr = datetime.datetime(curr.year + 1, 1, 1)
+            else:
+                curr = datetime.datetime(curr.year, curr.month + 1, 1)
+                
+    # Add actual data months
+    for idx in res_data:
+        for ym in res_data[idx]:
+            all_yms.add(ym)
+            
+    # Sort months
+    sorted_months = sorted(list(all_yms))
+    
+    # Fill gaps? (e.g. if we have Jan and Mar, we should probably have Feb)
+    if sorted_months:
+        min_ym = sorted_months[0]
+        max_ym = sorted_months[-1]
+        
+        start_dt = datetime.datetime(min_ym[0], min_ym[1], 1)
+        end_dt = datetime.datetime(max_ym[0], max_ym[1], 1)
+        
+        filled_months = []
+        curr = start_dt
+        while curr <= end_dt:
+            filled_months.append((curr.year, curr.month))
+            if curr.month == 12:
+                curr = datetime.datetime(curr.year + 1, 1, 1)
+            else:
+                curr = datetime.datetime(curr.year, curr.month + 1, 1)
+        sorted_months = filled_months
             
     return project, selected_resources, sorted_months, res_data
