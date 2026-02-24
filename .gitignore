@@ -1,0 +1,4 @@
+data/
+bonus_calculator/data/
+__pycache__/
+*.pyc
